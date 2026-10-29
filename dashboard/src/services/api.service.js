@@ -86,6 +86,16 @@ export const adminApi = {
     request("POST", "/admin/users/bulk-approve", { userIds }),
 };
 
+export const redemptionsApi = {
+  getAll: (status) =>
+    request(
+      "GET",
+      `/admin/redemptions${status ? `?status=${encodeURIComponent(status)}` : ""}`,
+    ),
+  update: (id, body) => request("PATCH", `/admin/redemptions/${id}`, body),
+};
+
+
 export const groupsApi = {
   getAll: () => request("GET", "/groups"),
   getById: (id) => request("GET", `/groups/${id}`),

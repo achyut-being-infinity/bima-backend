@@ -299,9 +299,193 @@ async function updateStoreItem(id, data) {
   return updatedItem;
 }
 
-// Export the new Store Admin functions.
+// Redemptions Admin APIs
+
+// Return all redemptions, optionally filtered by status, ordered by creation time descending.
+async function getAllRedemptions(filters = {}) {
+  const where = {};
+  if (filters.status) {
+    where.status = filters.status;
+  }
+
+  return await prisma.redemption.findMany({
+    where,
+    include: {
+      user: {
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          phone: true,
+          rollNumber: true,
+          collegeName: true,
+          coinBalance: true,
+        },
+      },
+      storeItem: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          imageUrl: true,
+          coinCost: true,
+          stock: true,
+          status: true,
+        },
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+}
+
+// Update an existing redemption (status, expectedDeliveryAt, adminNote, rejectionReason).
+// Setting status to REJECTED triggers an atomic coin refund and inventory restock.
+async function updateRedemption(id, data, adminId) {
+  const existingRedemption = await prisma.redemption.findUnique({
+    where: { id },
+  });
+
+  if (!existingRedemption) {
+    const error = new Error("Redemption not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  // Prevent modifying status of an already rejected redemption
+  if (
+    existingRedemption.status === "REJECTED" &&
+    data.status !== undefined &&
+    data.status !== "REJECTED"
+  ) {
+    const error = new Error(
+      "Cannot change status of a redemption that has already been REJECTED (coins were refunded and item was restocked)",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const updateFields = {};
+  if (data.status !== undefined) {
+    updateFields.status = data.status;
+  }
+  if (data.expectedDeliveryAt !== undefined) {
+    updateFields.expectedDeliveryAt = data.expectedDeliveryAt
+      ? new Date(data.expectedDeliveryAt)
+      : null;
+  }
+  if (data.adminNote !== undefined) {
+    updateFields.adminNote = data.adminNote ? data.adminNote.trim() : null;
+  }
+  if (data.rejectionReason !== undefined) {
+    updateFields.rejectionReason = data.rejectionReason
+      ? data.rejectionReason.trim()
+      : null;
+  }
+
+  const redemptionInclude = {
+    user: {
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        rollNumber: true,
+        collegeName: true,
+        coinBalance: true,
+      },
+    },
+    storeItem: {
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        imageUrl: true,
+        coinCost: true,
+        stock: true,
+        status: true,
+      },
+    },
+  };
+
+  // If transitioning to REJECTED from a non-REJECTED status, refund coins and restock item atomically
+  const isTransitioningToRejected =
+    data.status === "REJECTED" && existingRedemption.status !== "REJECTED";
+
+  if (isTransitioningToRejected) {
+    return await prisma.$transaction(async (tx) => {
+      // 1. Check if a refund transaction already exists (deduplication)
+      const existingRefund = await tx.coinTransaction.findUnique({
+        where: {
+          userId_referenceType_referenceId_type: {
+            userId: existingRedemption.userId,
+            referenceType: "REDEMPTION",
+            referenceId: existingRedemption.id,
+            type: "REDEMPTION_REFUND",
+          },
+        },
+      });
+
+      if (!existingRefund) {
+        // Create REDEMPTION_REFUND ledger entry
+        await tx.coinTransaction.create({
+          data: {
+            userId: existingRedemption.userId,
+            amount: existingRedemption.coinCost,
+            type: "REDEMPTION_REFUND",
+            referenceType: "REDEMPTION",
+            referenceId: existingRedemption.id,
+            description:
+              data.rejectionReason?.trim() ||
+              `Refund for rejected redemption #${existingRedemption.id}`,
+            createdById: adminId,
+          },
+        });
+
+        // Restore user's coinBalance
+        await tx.user.update({
+          where: { id: existingRedemption.userId },
+          data: {
+            coinBalance: {
+              increment: existingRedemption.coinCost,
+            },
+          },
+        });
+
+        // Restock StoreItem stock (+1)
+        await tx.storeItem.update({
+          where: { id: existingRedemption.storeItemId },
+          data: {
+            stock: {
+              increment: 1,
+            },
+          },
+        });
+      }
+
+      // Update redemption record
+      return await tx.redemption.update({
+        where: { id },
+        data: updateFields,
+        include: redemptionInclude,
+      });
+    });
+  }
+
+  // Normal update without refund/restock
+  return await prisma.redemption.update({
+    where: { id },
+    data: updateFields,
+    include: redemptionInclude,
+  });
+}
+
+// Export the Store and Redemption Admin functions.
 Object.assign(module.exports, {
   getAllStoreItems,
   createStoreItem,
   updateStoreItem,
+  getAllRedemptions,
+  updateRedemption,
 });

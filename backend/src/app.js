@@ -1079,6 +1079,8 @@ const runtimeRoutes = require("./modules/runtime/runtime.routes");
 
 const analyticsRoutes = require("./modules/analytics/analytics.routes");
 
+const redemptionRoutes = require("./routes/redemption.routes");
+
 const app = express();
 
 app.use(cors());
@@ -1096,6 +1098,8 @@ app.use("/health", healthRoutes);
 app.use("/auth", authRoutes);
 
 app.use("/admin", adminRoutes);
+
+app.use("/redemptions", redemptionRoutes);
 
 app.use("/groups", groupRoutes);
 

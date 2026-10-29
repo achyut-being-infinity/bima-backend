@@ -487,8 +487,148 @@ async function updateStoreItem(req, res) {
   }
 }
 
+// Redemptions Admin API controllers
+
+// GET /admin/redemptions or GET /redemptions
+async function getAllRedemptions(req, res) {
+  try {
+    const { status } = req.query;
+    const validStatuses = [
+      "REQUESTED",
+      "APPROVED",
+      "SHIPPED",
+      "DELIVERED",
+      "REJECTED",
+    ];
+
+    if (status !== undefined && !validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `status must be one of: ${validStatuses.join(", ")}`,
+      });
+    }
+
+    const redemptions = await adminService.getAllRedemptions({ status });
+
+    return res.status(200).json({
+      success: true,
+      data: redemptions,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+}
+
+// PATCH /admin/redemptions/:id or PATCH /redemptions/:id
+async function updateRedemption(req, res) {
+  try {
+    if (
+      !req.body ||
+      typeof req.body !== "object" ||
+      Array.isArray(req.body) ||
+      Object.keys(req.body).length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body is required",
+      });
+    }
+
+    const { status, expectedDeliveryAt, adminNote, rejectionReason } = req.body;
+    const validStatuses = [
+      "REQUESTED",
+      "APPROVED",
+      "SHIPPED",
+      "DELIVERED",
+      "REJECTED",
+    ];
+
+    if (
+      status === undefined &&
+      expectedDeliveryAt === undefined &&
+      adminNote === undefined &&
+      rejectionReason === undefined
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "At least one field (status, expectedDeliveryAt, adminNote, rejectionReason) must be provided",
+      });
+    }
+
+    // Validate status
+    if (status !== undefined && !validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `status must be one of: ${validStatuses.join(", ")}`,
+      });
+    }
+
+    // Validate expectedDeliveryAt
+    if (expectedDeliveryAt !== undefined && expectedDeliveryAt !== null) {
+      const date = new Date(expectedDeliveryAt);
+      if (isNaN(date.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: "expectedDeliveryAt must be a valid ISO-8601 date string or null",
+        });
+      }
+    }
+
+    // Validate adminNote
+    if (
+      adminNote !== undefined &&
+      adminNote !== null &&
+      typeof adminNote !== "string"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "adminNote must be a string or null",
+      });
+    }
+
+    // Validate rejectionReason
+    if (
+      rejectionReason !== undefined &&
+      rejectionReason !== null &&
+      typeof rejectionReason !== "string"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "rejectionReason must be a string or null",
+      });
+    }
+
+    const redemption = await adminService.updateRedemption(
+      req.params.id,
+      {
+        status,
+        expectedDeliveryAt,
+        adminNote,
+        rejectionReason,
+      },
+      req.dbUser.id,
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: redemption,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+}
+
 Object.assign(module.exports, {
   getAllStoreItems,
   createStoreItem,
   updateStoreItem,
+  getAllRedemptions,
+  updateRedemption,
 });

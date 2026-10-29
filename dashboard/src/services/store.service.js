@@ -61,3 +61,17 @@ export const storeApi = {
   // PATCH /admin/store/items/:id
   updateItem: (id, data) => request("PATCH", `/admin/store/items/${id}`, buildStorePayload(data, true)),
 };
+
+export const redemptionApi = {
+  // GET /admin/redemptions (?status=)
+  getRedemptions: (status) =>
+    request(
+      "GET",
+      `/admin/redemptions${status ? `?status=${encodeURIComponent(status)}` : ""}`,
+    ),
+
+  // PATCH /admin/redemptions/:id
+  updateRedemption: (id, data) =>
+    request("PATCH", `/admin/redemptions/${id}`, data),
+};
+
